@@ -1,0 +1,1597 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CalorieQuest AI 3.0 — Умный счетчик КБЖУ с уточнениями</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0b1120;
+      --bg-card: #1e293b;
+      --bg-input: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --hp-high: #22c55e;
+      --hp-mid: #eab308;
+      --hp-low: #ef4444;
+      --hp-over: #a855f7;
+      --protein-color: #38bdf8;
+      --fat-color: #f59e0b;
+      --carb-color: #c084fc;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .app-container {
+      width: 100%;
+      max-width: 480px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-dark);
+      position: relative;
+    }
+
+    /* Верхний игровой HUD */
+    .hud-header {
+      background: var(--bg-card);
+      padding: 12px 14px;
+      border-bottom: 1px solid #334155;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+      z-index: 10;
+    }
+
+    .hud-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .player-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 700;
+      font-size: 0.88rem;
+    }
+
+    .lvl-badge {
+      background: var(--accent);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+    }
+
+    .ai-status-badge {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .hud-actions {
+      display: flex;
+      gap: 5px;
+    }
+
+    .icon-btn {
+      background: var(--bg-input);
+      color: var(--text-main);
+      border: none;
+      padding: 5px 9px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      transition: background 0.2s;
+    }
+
+    .icon-btn:hover {
+      background: #475569;
+    }
+
+    /* HP-бар (Калории) */
+    .hp-container {
+      position: relative;
+      background: #090d16;
+      height: 26px;
+      border-radius: 8px;
+      border: 2px solid #475569;
+      overflow: hidden;
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.7);
+    }
+
+    .hp-damage-trail {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      background: #fca5a5;
+      width: 100%;
+      transition: width 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+      z-index: 1;
+    }
+
+    .hp-bar-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #16a34a, var(--hp-high));
+      transition: width 0.35s ease-out, background 0.3s;
+      z-index: 2;
+    }
+
+    .hp-text {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.8rem;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+      z-index: 3;
+    }
+
+    /* Полоски БЖУ */
+    .macros-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .macro-card {
+      background: rgba(15, 23, 42, 0.65);
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+
+    .macro-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .macro-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #090d16;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .macro-bar-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .fill-p { background: var(--protein-color); }
+    .fill-f { background: var(--fat-color); }
+    .fill-c { background: var(--carb-color); }
+
+    /* Чат */
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .msg {
+      max-width: 88%;
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      word-wrap: break-word;
+    }
+
+    .msg.bot {
+      align-self: flex-start;
+      background: var(--bg-card);
+      border-bottom-left-radius: 4px;
+      border: 1px solid #334155;
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    /* Карточка разбора блюда */
+    .ai-food-breakdown {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 9px 11px;
+      margin-top: 8px;
+      font-size: 0.8rem;
+    }
+
+    .ai-food-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+      border-bottom: 1px dashed rgba(148, 163, 184, 0.2);
+      gap: 8px;
+    }
+
+    .ai-food-item:last-of-type {
+      border-bottom: none;
+    }
+
+    .ai-macro-pills {
+      display: flex;
+      gap: 6px;
+      margin-top: 7px;
+      flex-wrap: wrap;
+    }
+
+    .macro-pill {
+      font-size: 0.72rem;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+      background: #1e293b;
+    }
+
+    .pill-p { color: var(--protein-color); border: 1px solid rgba(56, 189, 248, 0.35); }
+    .pill-f { color: var(--fat-color); border: 1px solid rgba(245, 158, 11, 0.35); }
+    .pill-c { color: var(--carb-color); border: 1px solid rgba(192, 132, 252, 0.35); }
+
+    /* Блок уточняющих вопросов и чипов от ИИ */
+    .clarification-box {
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.2);
+    }
+
+    .clarification-question {
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .clarification-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .clarify-chip {
+      background: rgba(99, 102, 241, 0.16);
+      color: #c7d2fe;
+      border: 1px solid rgba(99, 102, 241, 0.45);
+      padding: 4px 9px;
+      border-radius: 14px;
+      font-size: 0.74rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .clarify-chip:hover {
+      background: rgba(99, 102, 241, 0.35);
+      color: white;
+    }
+
+    .msg-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-top: 7px;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .msg.user .msg-meta {
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .action-btns {
+      display: flex;
+      gap: 5px;
+    }
+
+    .refine-btn {
+      background: rgba(56, 189, 248, 0.18);
+      color: #7dd3fc;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+
+    .undo-btn {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+
+    /* Плашка активного режима уточнения над полем ввода */
+    .refine-banner {
+      background: #1e1b4b;
+      border-top: 1px solid var(--accent);
+      padding: 8px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: #e0e7ff;
+    }
+
+    .refine-cancel {
+      background: transparent;
+      border: 1px solid #6366f1;
+      color: #c7d2fe;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      cursor: pointer;
+    }
+
+    /* Панель ввода */
+    .input-panel {
+      display: flex;
+      gap: 7px;
+      padding: 10px 12px;
+      background: var(--bg-card);
+      border-top: 1px solid #334155;
+      align-items: center;
+    }
+
+    .photo-btn {
+      background: var(--bg-input);
+      color: var(--text-main);
+      border: 1px solid #475569;
+      padding: 9px 11px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    .chat-input {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid #475569;
+      color: var(--text-main);
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    .chat-input:focus {
+      border-color: var(--accent);
+    }
+
+    .send-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Модальные окна */
+    .modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(11, 17, 32, 0.95);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 50;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .modal-card {
+      background: var(--bg-card);
+      width: 100%;
+      max-height: 92vh;
+      overflow-y: auto;
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid #475569;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.65);
+    }
+
+    .modal-title {
+      font-size: 1.12rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      line-height: 1.4;
+    }
+
+    .form-group {
+      margin-bottom: 11px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .form-row .form-group {
+      flex: 1;
+    }
+
+    .form-control {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid #475569;
+      color: var(--text-main);
+      padding: 8px 11px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+    }
+
+    .goal-selector {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .goal-option {
+      background: var(--bg-input);
+      border: 2px solid transparent;
+      border-radius: 10px;
+      padding: 9px 6px;
+      text-align: center;
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+
+    .goal-option.active {
+      border-color: var(--accent);
+      background: rgba(99, 102, 241, 0.2);
+      font-weight: 700;
+    }
+
+    .primary-btn {
+      width: 100%;
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    .history-item {
+      padding: 10px;
+      background: var(--bg-input);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 0.82rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  <!-- Верхний HUD -->
+  <header class="hud-header">
+    <div class="hud-top-row">
+      <div class="player-info">
+        <span class="lvl-badge" id="streakBadge">День 1</span>
+        <span id="goalLabel">Герой</span>
+        <span class="ai-status-badge" id="aiBadge">🤖 ИИ-Агент 3.0</span>
+      </div>
+      <div class="hud-actions">
+        <button class="icon-btn" onclick="openHistoryModal()" title="История">📜</button>
+        <button class="icon-btn" onclick="resetDay()" title="Новый день">🔄</button>
+        <button class="icon-btn" onclick="openProfileModal()" title="Профиль">⚙️</button>
+      </div>
+    </div>
+
+    <!-- Главная шкала HP (Калории) -->
+    <div class="hp-container">
+      <div class="hp-damage-trail" id="hpTrail"></div>
+      <div class="hp-bar-fill" id="hpFill"></div>
+      <div class="hp-text" id="hpText">2000 / 2000 HP (ккал)</div>
+    </div>
+
+    <!-- Полоски БЖУ -->
+    <div class="macros-grid">
+      <div class="macro-card">
+        <div class="macro-header">
+          <span style="color: var(--protein-color)">🛡️ Белки</span>
+          <span id="pText">0/140г</span>
+        </div>
+        <div class="macro-bar-bg">
+          <div class="macro-bar-fill fill-p" id="pBar"></div>
+        </div>
+      </div>
+
+      <div class="macro-card">
+        <div class="macro-header">
+          <span style="color: var(--fat-color)">🔥 Жиры</span>
+          <span id="fText">0/70г</span>
+        </div>
+        <div class="macro-bar-bg">
+          <div class="macro-bar-fill fill-f" id="fBar"></div>
+        </div>
+      </div>
+
+      <div class="macro-card">
+        <div class="macro-header">
+          <span style="color: var(--carb-color)">⚡ Углеводы</span>
+          <span id="cText">0/220г</span>
+        </div>
+        <div class="macro-bar-bg">
+          <div class="macro-bar-fill fill-c" id="cBar"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Область чата -->
+  <main class="chat-area" id="chatArea"></main>
+
+  <!-- Плашка режима уточнения (появляется при редактировании блюда) -->
+  <div class="refine-banner hidden" id="refineBanner">
+    <span id="refineBannerText">✏️ Уточнение к блюду...</span>
+    <button type="button" class="refine-cancel" onclick="cancelRefineMode()">Отмена ✕</button>
+  </div>
+
+  <!-- Поле ввода -->
+  <form class="input-panel" onsubmit="handleChatSubmit(event)">
+    <input type="file" id="photoInput" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)" />
+    <button type="button" class="photo-btn" onclick="document.getElementById('photoInput').click()" title="Распознать по фото">📷</button>
+    <input
+      type="text"
+      id="chatInput"
+      class="chat-input"
+      placeholder="Еда или уточнение (напр: без масла, 150г)..."
+      autocomplete="off"
+    />
+    <button type="submit" id="sendBtn" class="send-btn">Ввод ⚔️</button>
+  </form>
+
+  <!-- Модальное окно анкеты и ИИ -->
+  <div class="modal-overlay hidden" id="profileModal">
+    <div class="modal-card">
+      <div class="modal-title">
+        <span>🧙‍♂️ Параметры персонажа</span>
+        <button class="icon-btn" id="closeModalBtn" onclick="closeModals()">✕</button>
+      </div>
+      <p class="modal-subtitle">
+        Индивидуальный расчет дневного запаса HP (калорий) и целевых норм БЖУ.
+      </p>
+
+      <form onsubmit="saveProfile(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Пол</label>
+            <select id="gender" class="form-control" required>
+              <option value="male">Мужской</option>
+              <option value="female">Женский</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Возраст (лет)</label>
+            <input type="number" id="age" class="form-control" min="12" max="100" value="28" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Рост (см)</label>
+            <input type="number" id="height" class="form-control" min="120" max="230" value="175" required />
+          </div>
+          <div class="form-group">
+            <label>Вес (кг)</label>
+            <input type="number" id="weight" class="form-control" min="35" max="250" step="0.5" value="75" required />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Дневная активность</label>
+          <select id="activity" class="form-control" required>
+            <option value="1.2">Сидячая работа, мало движения (x1.2)</option>
+            <option value="1.375" selected>Легкая активность / 1-3 тренировки (x1.375)</option>
+            <option value="1.55">Средняя активность / 3-5 тренировок (x1.55)</option>
+            <option value="1.725">Высокая нагрузка / спорт каждый день (x1.725)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Цель персонажа</label>
+          <input type="hidden" id="goal" value="loss" />
+          <div class="goal-selector">
+            <div class="goal-option active" data-goal="loss" onclick="selectGoal('loss')">
+              🔥 Сброс веса<br><small style="color:var(--text-muted)">-15% ккал</small>
+            </div>
+            <div class="goal-option" data-goal="maintain" onclick="selectGoal('maintain')">
+              ⚖️ Баланс<br><small style="color:var(--text-muted)">Норма</small>
+            </div>
+            <div class="goal-option" data-goal="gain" onclick="selectGoal('gain')">
+              💪 Набор массы<br><small style="color:var(--text-muted)">+15% ккал</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #334155;">
+          <label>🔑 Gemini API Key (для распознавания по фото и облачного ИИ)</label>
+          <input
+            type="password"
+            id="apiKey"
+            class="form-control"
+            placeholder="AIzaSy... (без ключа работает встроенный умный парсер)"
+          />
+        </div>
+
+        <button type="submit" class="primary-btn">Сохранить и рассчитать 🚀</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Модальное окно архива -->
+  <div class="modal-overlay hidden" id="historyModal">
+    <div class="modal-card">
+      <div class="modal-title">
+        <span>📜 Архив прошлых дней</span>
+        <button class="icon-btn" onclick="closeModals()">✕</button>
+      </div>
+      <div id="historyList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.ready();
+    window.Telegram.WebApp.expand();
+  }
+
+  const STORAGE_KEY = 'calorie_quest_ai_v3';
+
+  let state = {
+    profileConfigured: false,
+    apiKey: '',
+    profile: { gender: 'male', age: 28, height: 175, weight: 75, activity: 1.375, goal: 'loss' },
+    targets: { kcal: 2000, p: 150, f: 67, c: 200 },
+    consumed: { kcal: 0, p: 0, f: 0, c: 0 },
+    dayNumber: 1,
+    currentDate: new Date().toLocaleDateString('ru-RU'),
+    messages: [],
+    history: []
+  };
+
+  // ID сообщения с приемом пищи, которое сейчас уточняется
+  let activeRefineEntryId = null;
+
+  // Расширенная база блюд с профилями уточнений
+  const FOOD_DB = [
+    { keys: ['овсян', 'геркулес', 'каш'], name: 'Каша', portion: 230, kcal100: 115, p100: 4.0, f100: 2.8, c100: 18.5, type: 'porridge' },
+    { keys: ['гречк', 'греч'], name: 'Гречка', portion: 200, kcal100: 132, p100: 4.5, f100: 2.3, c100: 25.0, type: 'garnish' },
+    { keys: ['рис'], name: 'Рис отварной', portion: 200, kcal100: 130, p100: 2.7, f100: 0.5, c100: 28.0, type: 'garnish' },
+    { keys: ['макарон', 'паст', 'спагетт', 'карбонар'], name: 'Паста / Макароны', portion: 230, kcal100: 165, p100: 6.0, f100: 2.5, c100: 30.0, type: 'garnish' },
+    { keys: ['пюре', 'картоф', 'картошк'], name: 'Картофель', portion: 200, kcal100: 130, p100: 2.4, f100: 4.0, c100: 20.5, type: 'potato' },
+    { keys: ['яйц', 'омлет', 'яичниц', 'глазун', 'скрэмбл'], name: 'Блюдо из яиц', portion: 120, kcal100: 155, p100: 12.7, f100: 11.5, c100: 0.9, type: 'eggs' },
+    { keys: ['грудк', 'куриц', 'филе', 'индейк', 'окороч', 'крылыш'], name: 'Птица (Курица/Индейка)', portion: 180, kcal100: 165, p100: 29.0, f100: 4.5, c100: 0.0, type: 'meat' },
+    { keys: ['котлет', 'бифштекс', 'тефтел', 'фрикадель'], name: 'Котлеты / Тефтели', portion: 140, kcal100: 235, p100: 16.5, f100: 15.5, c100: 7.5, type: 'meat' },
+    { keys: ['говядин', 'стейк', 'гуляш', 'бефстроган'], name: 'Говядина', portion: 180, kcal100: 240, p100: 25.0, f100: 15.0, c100: 1.0, type: 'meat' },
+    { keys: ['свинин', 'отбивн', 'шашлык', 'ребрыш'], name: 'Свинина / Шашлык', portion: 200, kcal100: 285, p100: 21.0, f100: 22.0, c100: 0.5, type: 'meat' },
+    { keys: ['рыб', 'лосос', 'семг', 'форел', 'минтай', 'треск', 'скумбр', 'сельд'], name: 'Рыба', portion: 170, kcal100: 185, p100: 22.0, f100: 10.5, c100: 0.0, type: 'meat' },
+    { keys: ['борщ', 'суп', 'щи', 'солянк', 'уха', 'рамен', 'том ям', 'бульон', 'окрошк'], name: 'Суп / Первое блюдо', portion: 350, kcal100: 68, p100: 3.5, f100: 3.4, c100: 6.0, type: 'soup' },
+    { keys: ['пельмен', 'хинкал', 'вареник', 'манты'], name: 'Пельмени / Вареники', portion: 250, kcal100: 260, p100: 11.5, f100: 12.5, c100: 25.5, type: 'dumplings' },
+    { keys: ['плов'], name: 'Плов', portion: 280, kcal100: 195, p100: 8.5, f100: 9.2, c100: 20.0, type: 'garnish' },
+    { keys: ['шаурм', 'шаверм', 'донер', 'гирос'], name: 'Шаурма', portion: 320, kcal100: 225, p100: 10.5, f100: 11.5, c100: 20.0, type: 'fastfood' },
+    { keys: ['пицц', 'хачапур', 'пирог', 'беляш', 'чебурек', 'выпечк', 'булочк', 'круассан'], name: 'Выпечка / Пицца', portion: 200, kcal100: 280, p100: 10.0, f100: 12.0, c100: 33.0, type: 'fastfood' },
+    { keys: ['бургер', 'гамбургер', 'чизбургер', 'биг мак', 'воппер'], name: 'Бургер', portion: 220, kcal100: 275, p100: 13.0, f100: 12.0, c100: 29.0, type: 'fastfood' },
+    { keys: ['ролл', 'суши', 'филадельф', 'калифорн'], name: 'Роллы / Суши', portion: 240, kcal100: 185, p100: 7.5, f100: 6.5, c100: 24.0, type: 'fastfood' },
+    { keys: ['салат', 'цезар', 'греческ', 'оливье', 'винегрет', 'овощ'], name: 'Салат', portion: 200, kcal100: 125, p100: 4.5, f100: 8.5, c100: 7.5, type: 'salad' },
+    { keys: ['творог', 'сырник', 'запеканк'], name: 'Творог / Сырники', portion: 180, kcal100: 155, p100: 16.5, f100: 6.5, c100: 7.5, type: 'dairy' },
+    { keys: ['йогурт', 'кефир', 'ряженк'], name: 'Кисломолочный продукт', portion: 200, kcal100: 75, p100: 4.2, f100: 3.2, c100: 7.0, type: 'dairy' },
+    { keys: ['тост', 'хлеб', 'бутерброд', 'сэндвич', 'брускетт'], name: 'Бутерброд / Хлеб', portion: 85, kcal100: 265, p100: 9.0, f100: 8.5, c100: 38.0, type: 'bread' },
+    { keys: ['сыр'], name: 'Сыр', portion: 40, kcal100: 350, p100: 24.0, f100: 28.0, c100: 0.5, type: 'dairy' },
+    { keys: ['колбас', 'сосиск', 'сардельк', 'ветчин', 'бекон'], name: 'Колбаса / Сосиски', portion: 100, kcal100: 280, p100: 12.0, f100: 25.0, c100: 2.0, type: 'meat' },
+    { keys: ['яблок', 'груш', 'апельсин', 'мандарин', 'персик', 'ягод', 'клубник'], name: 'Фрукты / Ягоды', portion: 170, kcal100: 50, p100: 0.5, f100: 0.2, c100: 11.8, type: 'fruit' },
+    { keys: ['банан'], name: 'Банан', portion: 130, kcal100: 89, p100: 1.1, f100: 0.3, c100: 22.8, type: 'fruit' },
+    { keys: ['орех', 'миндал', 'грецк', 'кешью', 'арахис', 'семечк'], name: 'Орехи / Семечки', portion: 35, kcal100: 610, p100: 18.0, f100: 54.0, c100: 13.0, type: 'nuts' },
+    { keys: ['капучино', 'латте', 'раф', 'флэт', 'кофе', 'какао', 'чай'], name: 'Напиток', portion: 250, kcal100: 50, p100: 2.5, f100: 2.6, c100: 4.5, type: 'drink' },
+    { keys: ['кола', 'газировк', 'сок', 'лимонад', 'энергетик'], name: 'Сладкий напиток', portion: 330, kcal100: 45, p100: 0.0, f100: 0.0, c100: 11.2, type: 'drink' },
+    { keys: ['шоколад', 'конфет', 'печень', 'торт', 'пирожн', 'десерт', 'морожен', 'зефир', 'вафл', 'блин', 'оладь'], name: 'Десерт / Сладкое', portion: 85, kcal100: 410, p100: 5.5, f100: 19.0, c100: 54.0, type: 'dessert' }
+  ];
+
+  function selectGoal(goalKey) {
+    document.getElementById('goal').value = goalKey;
+    document.querySelectorAll('.goal-option').forEach(el => {
+      el.classList.toggle('active', el.dataset.goal === goalKey);
+    });
+  }
+
+  function calculateTargets(p) {
+    let bmr = (10 * p.weight) + (6.25 * p.height) - (5 * p.age);
+    bmr += (p.gender === 'male') ? 5 : -161;
+    const tdee = bmr * p.activity;
+
+    let kcalMultiplier = 1.0, proteinPerKg = 1.6, fatPerKg = 1.0;
+    if (p.goal === 'loss') { kcalMultiplier = 0.85; proteinPerKg = 2.0; fatPerKg = 0.9; }
+    else if (p.goal === 'gain') { kcalMultiplier = 1.15; proteinPerKg = 1.8; fatPerKg = 1.0; }
+
+    const targetKcal = Math.round(tdee * kcalMultiplier);
+    const targetP = Math.round(p.weight * proteinPerKg);
+    const targetF = Math.round(p.weight * fatPerKg);
+    const remainingKcal = Math.max(200, targetKcal - (targetP * 4 + targetF * 9));
+    const targetC = Math.round(remainingKcal / 4);
+
+    return { kcal: targetKcal, p: targetP, f: targetF, c: targetC };
+  }
+
+  function loadState() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try { state = { ...state, ...JSON.parse(raw) }; } catch (e) { console.error(e); }
+    }
+    const today = new Date().toLocaleDateString('ru-RU');
+    if (state.profileConfigured && state.currentDate !== today) {
+      archiveCurrentDay(today);
+    }
+    if (!state.profileConfigured) {
+      document.getElementById('closeModalBtn').classList.add('hidden');
+      openProfileModal();
+    } else {
+      document.getElementById('closeModalBtn').classList.remove('hidden');
+      renderAll();
+    }
+  }
+
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function saveProfile(e) {
+    e.preventDefault();
+    const profile = {
+      gender: document.getElementById('gender').value,
+      age: Number(document.getElementById('age').value),
+      height: Number(document.getElementById('height').value),
+      weight: Number(document.getElementById('weight').value),
+      activity: Number(document.getElementById('activity').value),
+      goal: document.getElementById('goal').value
+    };
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const targets = calculateTargets(profile);
+    const isFirstTime = !state.profileConfigured;
+
+    state.profile = profile;
+    state.apiKey = apiKey;
+    state.targets = targets;
+    state.profileConfigured = true;
+
+    document.getElementById('closeModalBtn').classList.remove('hidden');
+    closeModals();
+
+    if (isFirstTime) {
+      addBotMessage(
+        `🎉 **Персонаж готов!**\n` +
+        `❤️ Запас здоровья: **${targets.kcal} HP**\n` +
+        `🛡️ Белки: **${targets.p}г** | 🔥 Жиры: **${targets.f}г** | ⚡ Углеводы: **${targets.c}г**\n\n` +
+        `Пиши любую еду. Если блюдо можно приготовить по-разному, я предложу **кнопки уточнения** (размер порции, масло, сметана, жирность), либо ты сможешь нажать **«✏️ Уточнить»** и скорректировать расчет!`
+      );
+    } else {
+      addBotMessage(`⚙️ Норма обновлена: **${targets.kcal} HP** (Б: ${targets.p}г, Ж: ${targets.f}г, У: ${targets.c}г).`);
+    }
+    saveState();
+    renderAll();
+  }
+
+  // Определение: является ли новое сообщение уточнением к предыдущему блюду
+  function isFollowUpRefinement(text) {
+    const clean = text.trim().toLowerCase();
+    const patterns = [
+      /^без\s+/, /^на\s+(воде|молоке|пару|масле|кокосовом|миндальном)/,
+      /^с\s+(маслом|сметаной|сахаром|майонезом|сыром|молоком)/,
+      /^со\s+сметаной/, /^добавь/, /^плюс\s+/, /^минус\s+/,
+      /^это\s+было/, /^там\s+было/, /^порция\s+/, /^вес\s+/,
+      /^нет,?\s+/, /^не\s+\d+/, /^жирность/, /^\d+\s*(г|гр|грамм|мл|шт|%)\b/,
+      /^(маленьк|больш|средн|половин|полпорц|двойн)/, /^(жарен|отварн|варён|запеч)/
+    ];
+    return patterns.some(rx => rx.test(clean));
+  }
+
+  function findLastFoodEntryId() {
+    for (let i = state.messages.length - 1; i >= 0; i--) {
+      if (state.messages[i].sender === 'user' && state.messages[i].nutrition) {
+        return state.messages[i].id;
+      }
+    }
+    return null;
+  }
+
+  // Включение режима уточнения конкретного приема пищи
+  function startRefineMode(entryId) {
+    const userMsg = state.messages.find(m => m.id === entryId);
+    if (!userMsg) return;
+    activeRefineEntryId = entryId;
+
+    const banner = document.getElementById('refineBanner');
+    const bannerText = document.getElementById('refineBannerText');
+    bannerText.textContent = `✏️ Уточнение к: «${userMsg.text.slice(0, 32)}»`;
+    banner.classList.remove('hidden');
+
+    const input = document.getElementById('chatInput');
+    input.placeholder = 'Напр: 180г, без масла, со сметаной...';
+    input.focus();
+  }
+
+  function cancelRefineMode() {
+    activeRefineEntryId = null;
+    document.getElementById('refineBanner').classList.add('hidden');
+    document.getElementById('chatInput').placeholder = 'Еда или уточнение (напр: без масла, 150г)...';
+  }
+
+  // Быстрый клик по чипу уточнения прямо в сообщении бота
+  function applyQuickClarification(entryId, chipText) {
+    activeRefineEntryId = entryId;
+    processFoodOrRefinement(chipText, null);
+  }
+
+  // Обработка загрузки фото
+  function handlePhotoUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64Data = reader.result.split(',')[1];
+      processFoodOrRefinement('📷 Фото блюда', { mimeType: file.type, data: base64Data });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
+  async function handleChatSubmit(e) {
+    e.preventDefault();
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    await processFoodOrRefinement(text, null);
+  }
+
+  // Главный контроллер: первичное распознавание ИЛИ уточнение существующего блюда
+  async function processFoodOrRefinement(text, imagePayload = null) {
+    const input = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+    input.disabled = true;
+    sendBtn.disabled = true;
+
+    const timeStr = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+    // Автоматически определяем, нужно ли применить сообщение как уточнение к прошлой еде
+    let targetEntryId = activeRefineEntryId;
+    if (!targetEntryId && !imagePayload && isFollowUpRefinement(text)) {
+      targetEntryId = findLastFoodEntryId();
+    }
+
+    cancelRefineMode();
+
+    const loadingId = Date.now() + 0.5;
+
+    if (targetEntryId) {
+      // Режим уточнения существующего блюда
+      const origUserMsg = state.messages.find(m => m.id === targetEntryId);
+      const origBotMsg = state.messages.find(m => m.parentId === targetEntryId);
+
+      state.messages.push({
+        id: loadingId,
+        sender: 'bot',
+        text: `🧙‍♂️ *ИИ-агент пересчитывает блюдо с учетом уточнения: «${text}»...*`,
+        time: timeStr
+      });
+      renderAll();
+
+      try {
+        const combinedQuery = `${origUserMsg.text} (Уточнение: ${text})`;
+        const updatedResult = await analyzeFoodWithAIAgent(combinedQuery, origBotMsg?.breakdown, text, imagePayload);
+        state.messages = state.messages.filter(m => m.id !== loadingId);
+
+        if (updatedResult.recognized) {
+          const oldNutr = origUserMsg.nutrition || { kcal: 0, p: 0, f: 0, c: 0 };
+          const newNutr = updatedResult.total;
+
+          // Вычисляем разницу (дельту) и корректируем дневной баланс
+          const diffKcal = newNutr.kcal - oldNutr.kcal;
+          state.consumed.kcal = Math.max(0, state.consumed.kcal + diffKcal);
+          state.consumed.p = Math.max(0, state.consumed.p + (newNutr.p - oldNutr.p));
+          state.consumed.f = Math.max(0, state.consumed.f + (newNutr.f - oldNutr.f));
+          state.consumed.c = Math.max(0, state.consumed.c + (newNutr.c - oldNutr.c));
+
+          // Обновляем исходную запись пользователя и карточку ответа ИИ
+          origUserMsg.text = `${origUserMsg.baseText || origUserMsg.text} ✏️ [${text}]`;
+          origUserMsg.nutrition = newNutr;
+
+          const sign = diffKcal >= 0 ? `+${diffKcal}` : `${diffKcal}`;
+          const remainingHp = state.targets.kcal - state.consumed.kcal;
+
+          if (origBotMsg) {
+            origBotMsg.text = `✅ **Пересчитано с уточнением («${text}»):** теперь **${newNutr.kcal} ккал** (разница: ${sign} ккал). Остаток: **${remainingHp} HP**.\n${updatedResult.comment}`;
+            origBotMsg.breakdown = updatedResult;
+          }
+        }
+      } catch (err) {
+        state.messages = state.messages.filter(m => m.id !== loadingId);
+        addBotMessage(`⚠️ Ошибка при пересчете: ${err.message}`);
+      }
+    } else {
+      // Новый прием пищи
+      const entryId = Date.now();
+      state.messages.push({
+        id: entryId,
+        sender: 'user',
+        text: text,
+        baseText: text,
+        time: timeStr
+      });
+
+      state.messages.push({
+        id: loadingId,
+        sender: 'bot',
+        text: '🧙‍♂️ *ИИ-агент распознает блюдо, способ готовки и БЖУ...*',
+        time: timeStr
+      });
+      renderAll();
+
+      try {
+        const aiResult = await analyzeFoodWithAIAgent(text, null, null, imagePayload);
+        state.messages = state.messages.filter(m => m.id !== loadingId);
+
+        if (!aiResult.recognized) {
+          addBotMessage(`🤔 ${aiResult.comment || 'Не удалось распознать еду. Попробуй описать подробнее.'}`, entryId);
+        } else {
+          const t = aiResult.total;
+          state.consumed.kcal += t.kcal;
+          state.consumed.p += t.p;
+          state.consumed.f += t.f;
+          state.consumed.c += t.c;
+
+          const userMsg = state.messages.find(m => m.id === entryId);
+          if (userMsg) userMsg.nutrition = t;
+
+          const remainingHp = state.targets.kcal - state.consumed.kcal;
+          const hpStatus = remainingHp >= 0
+            ? `Осталось **${remainingHp} HP**`
+            : `💀 Перебор на **${Math.abs(remainingHp)} ккал**`;
+
+          state.messages.push({
+            id: Date.now(),
+            parentId: entryId,
+            sender: 'bot',
+            text: `⚔️ **-${t.kcal} HP** | ${hpStatus}\n${aiResult.comment}`,
+            breakdown: aiResult,
+            time: timeStr
+          });
+        }
+      } catch (err) {
+        state.messages = state.messages.filter(m => m.id !== loadingId);
+        addBotMessage(`⚠️ Ошибка ИИ-агента: ${err.message}`, entryId);
+      }
+    }
+
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+    saveState();
+    renderAll();
+  }
+
+// ===== Автоматический выбор модели Gemini =====
+  // Приложение само запрашивает у Google список моделей, берёт самую свежую стабильную Flash-модель
+  // и, если она недоступна, пробует следующую. Список кэшируется на 12 часов, менять код руками не нужно.
+  const MODELS_CACHE_KEY = 'calorie_quest_ai_models_v1';
+  const MODELS_CACHE_TTL = 12 * 60 * 60 * 1000;
+  const FALLBACK_MODELS = ['gemini-3.8-flash']; // запасной вариант, если список моделей получить не удалось
+
+  function loadModelsCache(key) {
+    try {
+      const c = JSON.parse(localStorage.getItem(MODELS_CACHE_KEY) || 'null');
+      if (c && c.keyTail === key.slice(-6) && Array.isArray(c.list) && c.list.length && Date.now() - c.ts < MODELS_CACHE_TTL) return c;
+    } catch (e) {}
+    return null;
+  }
+
+  function saveModelsCache(key, list, working, ts) {
+    try {
+      localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify({ keyTail: key.slice(-6), ts: ts || Date.now(), list, working }));
+    } catch (e) {}
+  }
+
+  function resetModelsCache() {
+    try { localStorage.removeItem(MODELS_CACHE_KEY); } catch (e) {}
+  }
+
+  // Сравнение версий вида [3, 8] и [3, 10]: новые первыми
+  function compareVersions(a, b) {
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const d = (b[i] || 0) - (a[i] || 0);
+      if (d !== 0) return d;
+    }
+    return 0;
+  }
+
+  async function fetchFlashModels(key) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${encodeURIComponent(key)}`);
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.error?.message || `Код ${res.status}`);
+    }
+    const data = await res.json();
+    const found = [];
+    let hasLatestAlias = false;
+    (data.models || []).forEach(m => {
+      if (!(m.supportedGenerationMethods || []).includes('generateContent')) return;
+      const id = String(m.name || '').replace(/^models\//, '');
+      if (id === 'gemini-flash-latest') { hasLatestAlias = true; return; }
+      // Только стабильные Flash: без lite, image, tts, preview, exp и т.п.
+      const match = id.match(/^gemini-(\d+(?:\.\d+)*)-flash$/);
+      if (match) found.push({ id, version: match[1].split('.').map(Number) });
+    });
+    found.sort((a, b) => compareVersions(a.version, b.version));
+    const list = found.map(f => f.id);
+    if (hasLatestAlias) list.push('gemini-flash-latest');
+    return list;
+  }
+
+  async function getModelCandidates(key) {
+    const cached = loadModelsCache(key);
+    if (cached) {
+      return cached.working ? [cached.working, ...cached.list.filter(m => m !== cached.working)] : cached.list;
+    }
+    try {
+      const list = await fetchFlashModels(key);
+      if (list.length) {
+        saveModelsCache(key, list, null);
+        return list;
+      }
+    } catch (e) {
+      console.warn('Не удалось получить список моделей Gemini:', e.message);
+    }
+    return FALLBACK_MODELS.slice();
+  }
+
+  // Запрос к Gemini с автоподбором модели
+  async function callGemini(key, parts) {
+    const candidates = await getModelCandidates(key);
+    let lastError = null;
+
+    for (const model of candidates.slice(0, 4)) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts }],
+            generationConfig: { responseMimeType: 'application/json' }
+          })
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const cached = loadModelsCache(key);
+        saveModelsCache(key, candidates, model, cached ? cached.ts : Date.now());
+        return { data, model };
+      }
+
+      const errBody = await response.json().catch(() => ({}));
+      const message = errBody.error?.message || `Код ${response.status}`;
+      lastError = new Error(message);
+
+      // Пробуем следующую модель только если проблема в самой модели (нет, отключена, перегружена, лимит)
+      const modelProblem = [404, 429, 503].includes(response.status) || /no longer available|deprecated/i.test(message);
+      if (!modelProblem) throw lastError;
+      console.warn(`Модель ${model} не подошла: ${message}`);
+    }
+
+    resetModelsCache(); // список устарел — в следующий раз запросим заново
+    throw lastError || new Error('Не нашлось подходящей модели Gemini');
+  }
+
+  async function analyzeFoodWithAIAgent(queryText, previousBreakdown = null, refinementText = null, imagePayload = null) {
+    const key = (state.apiKey || '').trim();
+
+    if (key) {
+      const contextPart = previousBreakdown
+        ? `Предыдущий расчет блюда был: ${JSON.stringify(previousBreakdown)}. Пользователь внес уточнение: "${refinementText}". Пересчитай блюдо с учетом этого уточнения!`
+        : `Пользователь описал прием пищи: "${queryText}".`;
+
+      const systemPrompt = `Ты — точный ИИ-нутрициолог в RPG-приложении. ${contextPart}
+Учитывай способ приготовления (жареное, на пару, на воде/молоке, с маслом/сметаной/соусом), жирность и бытовые меры веса.
+Если вес или детали не указаны, заполни "clarificationQuestion" и 3-4 коротких варианта в "suggestions".
+Верни СТРОГО валидный JSON без markdown-разметки по схеме:
+{
+  "recognized": true,
+  "items": [{"name": "Название и вес (напр. Пельмени со сметаной 250г)", "kcal": 520, "p": 24, "f": 26, "c": 48}],
+  "total": {"kcal": 520, "p": 24, "f": 26, "c": 48},
+  "comment": "Короткий игровой комментарий (1 предложение)",
+  "clarificationQuestion": "Уточним детали порции?",
+  "suggestions": ["Порция 150г", "Порция 350г", "Без сметаны", "С маслом (+15г)"]
+}`;
+
+      try {
+        const parts = [{ text: systemPrompt }];
+        if (imagePayload) {
+          parts.push({ inlineData: { mimeType: imagePayload.mimeType, data: imagePayload.data } });
+        }
+
+        const { data, model } = await callGemini(key, parts);
+        console.info('Gemini: использована модель', model);
+        const rawText = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+        if (!rawText) {
+          throw new Error(data.promptFeedback?.blockReason ? `Запрос заблокирован: ${data.promptFeedback.blockReason}` : 'Пустой ответ от модели');
+        }
+        return JSON.parse(rawText.replace(/^```(?:json)?\s*|\s*```$/g, '').trim());
+
+      } catch (apiError) {
+        console.warn('Облачный API не ответил, переключаюсь на встроенный ИИ:', apiError.message);
+        const fallbackResult = await advancedLocalFoodAgent(queryText);
+        fallbackResult.comment = `⚠️ Gemini: ${apiError.message}. Использован встроенный ИИ. ${fallbackResult.comment}`;
+        return fallbackResult;
+      }
+    }
+
+    // Если поле ключа в профиле оставлено пустым — работает встроенный автономный ИИ-агент
+    return await advancedLocalFoodAgent(queryText);
+  }
+  // Продвинутый встроенный анализатор еды, модификаторов способа готовки и генератор уточнений
+  async function advancedLocalFoodAgent(fullText) {
+    await new Promise(r => setTimeout(r, 450));
+
+    const lower = fullText.toLowerCase();
+
+    // Разбиваем только основную часть на блюда, но сохраняем контекст уточнений
+    const segments = lower.split(/,| и | плюс |\+/);
+    const items = [];
+    let clarificationQuestion = null;
+    let suggestions = [];
+
+    // Глобальные модификаторы в строке (применяются при уточнении)
+    const hasNoOil = /без\s+масл|на\s+сухой|на\s+пару|отварн|варён/.test(lower);
+    const hasFried = /жарен|во\s+фритюр|с\s+маслом|на\s+масле/.test(lower);
+    const hasOnWater = /на\s+воде|без\s+молок/.test(lower);
+    const hasOnMilk = /на\s+молок|с\s+молок/.test(lower);
+    const hasSourCream = /со\s+сметан|с\s+сметан|\+\s*сметан/.test(lower);
+    const hasNoSourCream = /без\s+сметан/.test(lower);
+    const hasMayo = /с\s+майонез|\+\s*майонез/.test(lower);
+    const hasNoSugar = /без\s+сахар|на\s+сахзам/.test(lower);
+    const hasButter = /со\s+сливочн|с\s+маслом|\+\s*масло/.test(lower);
+
+    // Проверка точного веса в последнем уточнении (например "Уточнение: 150г")
+    const overrideGramsMatch = lower.match(/уточнение:.*?(\d+)\s*(г|гр|грамм|мл)/i) || lower.match(/(\d+)\s*(г|гр|грамм|мл)/i);
+
+    segments.forEach(seg => {
+      const clean = seg.replace(/\(уточнение:.*?\)/g, '').trim();
+      if (!clean) return;
+
+      const matched = FOOD_DB.find(d => d.keys.some(k => clean.includes(k)));
+      if (!matched) return;
+
+      // 1. Определение веса порции (бытовые меры или граммы)
+      let grams = matched.portion;
+      let weightExplicit = false;
+
+      const localGrams = clean.match(/(\d+)\s*(г|гр|грамм|мл)/i);
+      if (overrideGramsMatch) {
+        grams = parseInt(overrideGramsMatch[1], 10);
+        weightExplicit = true;
+      } else if (localGrams) {
+        grams = parseInt(localGrams[1], 10);
+        weightExplicit = true;
+      } else if (/маленьк|полпорц|половин/.test(lower)) {
+        grams = Math.round(matched.portion * 0.65);
+        weightExplicit = true;
+      } else if (/больш|двойн/.test(lower)) {
+        grams = Math.round(matched.portion * 1.45);
+        weightExplicit = true;
+      } else if (/тарелк|миск/.test(clean)) {
+        grams = 300;
+      } else if (/стакан|кружк|чашк/.test(clean)) {
+        grams = 250;
+      } else if (/ст\.?\s*лож/.test(clean)) {
+        grams = 25;
+        weightExplicit = true;
+      } else if (/ч\.?\s*лож/.test(clean)) {
+        grams = 8;
+        weightExplicit = true;
+      } else {
+        const countMatch = clean.match(/^(\d+)\s*(шт|куск|ломтик)?/);
+        if (countMatch && parseInt(countMatch[1], 10) <= 12) {
+          grams = Math.round(matched.portion * parseInt(countMatch[1], 10) * 0.6);
+          weightExplicit = true;
+        }
+      }
+
+      let kcal100 = matched.kcal100;
+      let p100 = matched.p100;
+      let f100 = matched.f100;
+      let c100 = matched.c100;
+      const mods = [];
+
+      // 2. Модификаторы способа приготовления и жирности
+      const fatPctMatch = lower.match(/(\d+)\s*%/);
+      if (matched.type === 'dairy' && fatPctMatch) {
+        const fatVal = parseInt(fatPctMatch[1], 10);
+        f100 = fatVal;
+        kcal100 = Math.round(p100 * 4 + f100 * 9 + c100 * 4);
+        mods.push(`${fatVal}%`);
+      }
+
+      if (hasOnWater && matched.type === 'porridge') {
+        kcal100 = Math.round(kcal100 * 0.75);
+        f100 = Math.max(0.8, f100 - 1.8);
+        c100 = Math.max(12, c100 - 3);
+        mods.push('на воде');
+      } else if (hasOnMilk && matched.type === 'porridge') {
+        kcal100 = Math.round(kcal100 * 1.2);
+        p100 += 1.5;
+        f100 += 2.0;
+        mods.push('на молоке');
+      }
+
+      if (hasNoOil) {
+        kcal100 = Math.round(kcal100 * 0.88);
+        f100 = Math.max(1, f100 * 0.7);
+        mods.push('без масла');
+      } else if (hasFried) {
+        kcal100 = Math.round(kcal100 * 1.25);
+        f100 += 6.5;
+        mods.push('жарен. на масле');
+      }
+
+      if (hasNoSugar && (matched.type === 'drink' || matched.type === 'porridge' || matched.type === 'dairy')) {
+        c100 = Math.max(1, c100 - 5);
+        kcal100 = Math.max(15, kcal100 - 20);
+        mods.push('без сахара');
+      }
+
+      const ratio = grams / 100;
+      let itemKcal = Math.round(kcal100 * ratio);
+      let itemP = Math.round(p100 * ratio);
+      let itemF = Math.round(f100 * ratio);
+      let itemC = Math.round(c100 * ratio);
+
+      // Добавки (сметана, масло, майонез)
+      if (hasSourCream && !hasNoSourCream) {
+        itemKcal += 60; itemP += 1; itemF += 6; itemC += 1;
+        mods.push('+ сметана 30г');
+      }
+      if (hasMayo) {
+        itemKcal += 135; itemF += 15;
+        mods.push('+ майонез');
+      }
+      if (hasButter && !hasNoOil) {
+        itemKcal += 75; itemF += 8;
+        mods.push('+ слив. масло 10г');
+      }
+
+      const modStr = mods.length > 0 ? ` [${mods.join(', ')}]` : '';
+      items.push({
+        name: `${matched.name}${modStr} (~${grams}г)`,
+        kcal: itemKcal,
+        p: itemP,
+        f: itemF,
+        c: itemC
+      });
+
+      // 3. Формируем умные кнопки уточнения, если детали не были заданы
+      if (suggestions.length === 0) {
+        if (matched.type === 'porridge') {
+          clarificationQuestion = 'Уточним, как приготовлена каша и размер порции?';
+          suggestions = ['На воде', 'На молоке', '+ Слив. масло', 'Порция 150г', 'Порция 300г'];
+        } else if (matched.type === 'dumplings' || matched.type === 'soup') {
+          clarificationQuestion = 'Были ли добавки и какой объем порции?';
+          suggestions = ['+ Сметана', 'Без сметаны', 'Маленькая (200г)', 'Большая (400г)'];
+        } else if (matched.type === 'meat' || matched.type === 'potato' || matched.type === 'eggs') {
+          clarificationQuestion = 'Уточним способ готовки и вес?';
+          suggestions = ['Без масла / На пару', 'Жареное на масле', 'Порция 120г', 'Порция 250г'];
+        } else if (matched.type === 'dairy') {
+          clarificationQuestion = 'Какая жирность и были ли добавки?';
+          suggestions = ['Жирность 0%', 'Жирность 5%', 'Жирность 9%', '+ Сметана'];
+        } else if (matched.type === 'drink') {
+          clarificationQuestion = 'Уточним объем и сахар?';
+          suggestions = ['Без сахара', '200 мл', '350 мл', 'На альтернативном молоке'];
+        } else if (!weightExplicit) {
+          clarificationQuestion = 'Уточним точный вес порции?';
+          suggestions = ['Маленькая (150г)', 'Средняя (220г)', 'Большая (350г)'];
+        }
+      }
+    });
+
+    // Если блюдо не из базы, но указано число или название
+    if (items.length === 0 && fullText.trim().length > 1) {
+      const kcalMatch = lower.match(/(\d+)\s*(ккал|кал)/);
+      const gramsMatch = lower.match(/(\d+)\s*(г|гр|грамм)/);
+      const grams = gramsMatch ? parseInt(gramsMatch[1], 10) : 200;
+      const kcal = kcalMatch ? parseInt(kcalMatch[1], 10) : Math.round(grams * 1.45);
+      items.push({
+        name: `${fullText.replace(/\(уточнение:.*?\)/gi, '').trim()} (~${grams}г)`,
+        kcal,
+        p: Math.round((kcal * 0.22) / 4),
+        f: Math.round((kcal * 0.32) / 9),
+        c: Math.round((kcal * 0.46) / 4)
+      });
+      clarificationQuestion = 'Хочешь уточнить вес или способ приготовления?';
+      suggestions = ['150г', '300г', 'Без масла', 'Жареное на масле'];
+    }
+
+    const total = items.reduce(
+      (acc, i) => ({ kcal: acc.kcal + i.kcal, p: acc.p + i.p, f: acc.f + i.f, c: acc.c + i.c }),
+      { kcal: 0, p: 0, f: 0, c: 0 }
+    );
+
+    return {
+      recognized: items.length > 0,
+      items,
+      total,
+      comment: `Распознано позиций: ${items.length}. Нажми на кнопки ниже или «✏️ Уточнить», если нужно скорректировать детали!`,
+      clarificationQuestion,
+      suggestions
+    };
+  }
+
+  function undoEntry(entryId) {
+    const userMsg = state.messages.find(m => m.id === entryId);
+    if (!userMsg || !userMsg.nutrition) return;
+
+    const n = userMsg.nutrition;
+    state.consumed.kcal = Math.max(0, state.consumed.kcal - n.kcal);
+    state.consumed.p = Math.max(0, state.consumed.p - n.p);
+    state.consumed.f = Math.max(0, state.consumed.f - n.f);
+    state.consumed.c = Math.max(0, state.consumed.c - n.c);
+
+    state.messages = state.messages.filter(m => m.id !== entryId && m.parentId !== entryId);
+    saveState();
+    renderAll();
+  }
+
+  function addBotMessage(text, parentId = null) {
+    state.messages.push({
+      id: Date.now() + Math.random(),
+      parentId,
+      sender: 'bot',
+      text,
+      time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    });
+  }
+
+  function archiveCurrentDay(newDateStr) {
+    if (state.consumed.kcal > 0) {
+      state.history.unshift({
+        date: state.currentDate,
+        consumed: { ...state.consumed },
+        targets: { ...state.targets }
+      });
+    }
+    state.consumed = { kcal: 0, p: 0, f: 0, c: 0 };
+    state.dayNumber += 1;
+    state.currentDate = newDateStr;
+    state.messages = [];
+    addBotMessage(`🌅 **День ${state.dayNumber}!** Запас здоровья восстановлен до **${state.targets.kcal} HP**.`);
+    saveState();
+  }
+
+  function resetDay() {
+    if (!confirm('Завершить текущий день, сохранить прогресс в архив и восстановить полное HP?')) return;
+    archiveCurrentDay(new Date().toLocaleDateString('ru-RU'));
+    renderAll();
+  }
+
+  function renderAll() {
+    const maxHp = state.targets.kcal;
+    const eaten = state.consumed.kcal;
+    const remaining = maxHp - eaten;
+    const pct = Math.max(0, Math.min(100, (remaining / maxHp) * 100));
+
+    const hpFill = document.getElementById('hpFill');
+    const hpTrail = document.getElementById('hpTrail');
+    const hpText = document.getElementById('hpText');
+
+    hpFill.style.width = `${pct}%`;
+    hpTrail.style.width = `${pct}%`;
+    hpText.textContent = `${remaining} / ${maxHp} HP (Съедено: ${eaten} ккал)`;
+
+    if (remaining < 0) {
+      hpFill.style.width = '100%';
+      hpFill.style.background = 'linear-gradient(90deg, #7e22ce, var(--hp-over))';
+    } else if (pct <= 20) {
+      hpFill.style.background = 'linear-gradient(90deg, #dc2626, var(--hp-low))';
+    } else if (pct <= 55) {
+      hpFill.style.background = 'linear-gradient(90deg, #ca8a04, var(--hp-mid))';
+    } else {
+      hpFill.style.background = 'linear-gradient(90deg, #16a34a, var(--hp-high))';
+    }
+
+    document.getElementById('pText').textContent = `${state.consumed.p}/${state.targets.p}г`;
+    document.getElementById('fText').textContent = `${state.consumed.f}/${state.targets.f}г`;
+    document.getElementById('cText').textContent = `${state.consumed.c}/${state.targets.c}г`;
+
+    document.getElementById('pBar').style.width = `${Math.min(100, (state.consumed.p / state.targets.p) * 100)}%`;
+    document.getElementById('fBar').style.width = `${Math.min(100, (state.consumed.f / state.targets.f) * 100)}%`;
+    document.getElementById('cBar').style.width = `${Math.min(100, (state.consumed.c / state.targets.c) * 100)}%`;
+
+    document.getElementById('streakBadge').textContent = `День ${state.dayNumber}`;
+    const goalNames = { loss: 'Похудение', maintain: 'Баланс', gain: 'Масса' };
+    document.getElementById('goalLabel').textContent = goalNames[state.profile.goal] || 'Герой';
+    document.getElementById('aiBadge').textContent = state.apiKey ? '⚡ Gemini AI' : '🤖 ИИ-Агент 3.0';
+
+    const chatArea = document.getElementById('chatArea');
+    chatArea.innerHTML = '';
+
+    state.messages.forEach(msg => {
+      const div = document.createElement('div');
+      div.className = `msg ${msg.sender}`;
+
+      const formattedText = msg.text
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+
+      let html = `<div>${formattedText}</div>`;
+
+      // Карточка КБЖУ + интерактивные чипы уточнения для ИИ
+      if (msg.breakdown && msg.breakdown.items) {
+        const b = msg.breakdown;
+        html += `<div class="ai-food-breakdown">`;
+        b.items.forEach(item => {
+          html += `<div class="ai-food-item">
+            <span>🍽️ ${item.name}</span>
+            <strong>${item.kcal} ккал</strong>
+          </div>`;
+        });
+        html += `<div class="ai-macro-pills">
+          <span class="macro-pill pill-p">🛡️ Б: +${b.total.p}г</span>
+          <span class="macro-pill pill-f">🔥 Ж: +${b.total.f}г</span>
+          <span class="macro-pill pill-c">⚡ У: +${b.total.c}г</span>
+        </div>`;
+
+        if (b.suggestions && b.suggestions.length > 0 && msg.parentId) {
+          html += `<div class="clarification-box">
+            <div class="clarification-question">💬 ${b.clarificationQuestion || 'Уточнить для ИИ:'}</div>
+            <div class="clarification-chips">`;
+          b.suggestions.forEach(s => {
+            const safeChip = s.replace(/'/g, "\\'");
+            html += `<button class="clarify-chip" onclick="applyQuickClarification(${msg.parentId}, '${safeChip}')">${s}</button>`;
+          });
+          html += `</div></div>`;
+        }
+        html += `</div>`;
+      }
+
+      html += `<div class="msg-meta"><span>${msg.time || ''}</span>`;
+      if (msg.sender === 'user' && msg.nutrition) {
+        html += `<div class="action-btns">
+          <button class="refine-btn" onclick="startRefineMode(${msg.id})">✏️ Уточнить</button>
+          <button class="undo-btn" onclick="undoEntry(${msg.id})">Удалить (+${msg.nutrition.kcal} HP)</button>
+        </div>`;
+      }
+      html += `</div>`;
+
+      div.innerHTML = html;
+      chatArea.appendChild(div);
+    });
+
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function openProfileModal() {
+    document.getElementById('gender').value = state.profile.gender;
+    document.getElementById('age').value = state.profile.age;
+    document.getElementById('height').value = state.profile.height;
+    document.getElementById('weight').value = state.profile.weight;
+    document.getElementById('activity').value = state.profile.activity;
+    document.getElementById('apiKey').value = state.apiKey || '';
+    selectGoal(state.profile.goal || 'loss');
+    document.getElementById('profileModal').classList.remove('hidden');
+  }
+
+  function openHistoryModal() {
+    const list = document.getElementById('historyList');
+    if (state.history.length === 0) {
+      list.innerHTML = '<p style="color: var(--text-muted); font-size: 0.88rem;">Архив пуст. Завершенные дни появятся здесь.</p>';
+    } else {
+      list.innerHTML = state.history.map(item => {
+        const c = item.consumed;
+        const t = item.targets;
+        return `<div class="history-item">
+          <div style="display:flex; justify-content:space-between; font-weight:700; margin-bottom:4px;">
+            <span>📅 ${item.date}</span>
+            <span>${c.kcal} / ${t.kcal} ккал</span>
+          </div>
+          <div style="font-size:0.76rem; color:var(--text-muted);">
+            🛡️ Белки: ${c.p}/${t.p}г | 🔥 Жиры: ${c.f}/${t.f}г | ⚡ Углеводы: ${c.c}/${t.c}г
+          </div>
+        </div>`;
+      }).join('');
+    }
+    document.getElementById('historyModal').classList.remove('hidden');
+  }
+
+  function closeModals() {
+    if (!state.profileConfigured) return;
+    document.getElementById('profileModal').classList.add('hidden');
+    document.getElementById('historyModal').classList.add('hidden');
+  }
+
+  loadState();
+</script>
+</body>
+</html>
